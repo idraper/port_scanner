@@ -3,6 +3,7 @@ from scapy.all import sr, sr1, traceroute, IP, TCP, UDP, ICMP
 
 from util import PortResults
 
+# runs a scapy trace and returns the result
 def tryTrace(host, port, verbose=False):
   def getProtoObj():
     if port.proto == 'udp': return UDP(dport=port.port)
@@ -18,6 +19,7 @@ def tryTrace(host, port, verbose=False):
 
   return rtn
 
+# runs a scapy TCP send/receive and returns the result
 def tryTCP(host, port, verbose=False):
   rtn = None
   resp = sr1(IP(dst=host)/TCP(dport=port.port,flags='S'),timeout=3, verbose=False)
@@ -35,6 +37,7 @@ def tryTCP(host, port, verbose=False):
 
   return rtn
 
+# runs a scapy UDP send/receive and returns the result
 def tryUDP(host, port, verbose=False):
   rtn = None
   resp = sr1(IP(dst=host)/UDP(dport=port.port),timeout=3, verbose=False)
@@ -55,6 +58,7 @@ def tryUDP(host, port, verbose=False):
 
   return rtn
 
+# checks a given port to see if it is open (or trace it)
 def checkPort(host, port, verbose=False):
   rtn = None
   if port.trace:            rtn = tryTrace(host, port, verbose)

@@ -1,9 +1,9 @@
 import os
-import tempfile
-import subprocess
 from latex import build_pdf
-from functools import reduce
 
+'''
+Takes results objects and outputs them in a nice format.
+'''
 class Formatter:
   def __init__(self, results):
     self.results = results
@@ -14,9 +14,8 @@ class Formatter:
   def __str__(self):
     return 'ResultsFormatter'
 
+  # print to stdout
   def print(self):
-    # print to stdout
-
     print('Summary:')
     print(f'UDP Ports Scanned:   {sum(map(lambda hr: sum(map(lambda x: x.port.proto == "udp", hr.portResults)), self.results.hostResults.values()))}')
     print(f'TCP Ports Scanned:   {sum(map(lambda hr: sum(map(lambda x: x.port.proto == "tcp", hr.portResults)), self.results.hostResults.values()))}')
@@ -34,9 +33,8 @@ class Formatter:
             for k in sorted(portR.raw[portR.host].keys()):
               print(f'    {k}'.ljust(6) + f'{portR.raw[portR.host][k][0]}')
 
+  # print to latex document
   def latex(self, fname):
-    # print to latex document
-
     def header():
       return r'''
 \documentclass[paper=a4, fontsize=11pt,twoside]{scrartcl}	% KOMA
@@ -145,6 +143,7 @@ class Formatter:
 
     document += done()
 
+    # create and open the pdf
     with open(fname, 'wb') as file:
       file.write(bytes(build_pdf(document)))
     os.system(f'start {fname}')

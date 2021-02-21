@@ -1,6 +1,8 @@
 import json
-import progressbar as pb
 
+'''
+Contains information about a port to scan.
+'''
 class Port:
   def __init__(self, port, proto='tcp', trace=False):
     self.port = port
@@ -16,6 +18,9 @@ class Port:
   def toJson(self):
     return json.dumps({'port': self.port, 'proto': self.proto, 'trace': self.trace})
 
+'''
+Contains information about the results of a single port.
+'''
 class PortResults:
   def __init__(self, host, port, status, raw):
     self.host = host
@@ -30,12 +35,14 @@ class PortResults:
     return f'PortResults({self.port}, {self.status})'
 
   def toJson(self):
-    return {'port': self.port.toJson(), 'status': self.status}
-    # return {'port': self.port.toJson(), 'status': self.status, 'raw': self.raw}
+    return {'port': self.port.toJson(), 'status': self.status, 'raw': self.raw}
 
   def toJsonStr(self):
     return json.dumps(self.toJson())
 
+'''
+Contains information about the results of a single host.
+'''
 class HostResults:
   def __init__(self, host, portResults=None):
     self.host = host
@@ -53,6 +60,9 @@ class HostResults:
   def toJsonStr(self):
     return json.dumps(self.toJson())
 
+'''
+Contains all results.
+'''
 class AllResults:
   def __init__(self, hostResults=None):
     self.hostResults = {} if hostResults is None else hostResults

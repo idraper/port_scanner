@@ -4,12 +4,14 @@ from distutils.util import strtobool
 
 from util import Port
 
+# converts port argument input into a Port object
 def argToPort(arg):
   sp = arg.split(':')
   if len(sp) == 1: return Port(int(sp[0]))
   if len(sp) == 2: return Port(int(sp[0]), sp[1])
   if len(sp) == 3: return Port(int(sp[0]), sp[1], True)
 
+# returns the combination of all hosts from inputs
 def getHosts(args):
   hosts = set()
   if args.host is not None:
@@ -28,6 +30,7 @@ def getHosts(args):
 
   return sorted(list(hosts))
 
+# parses the arguments using a given parser
 def processArgs(parser, raw_args):
   args = parser.parse_args(raw_args)
   hosts = getHosts(args)
@@ -35,6 +38,7 @@ def processArgs(parser, raw_args):
 
   return hosts, [argToPort(arg) for arg in args.port], args.latex, args.verbose
 
+# creates the argument parser and returns the relevant info
 def getArgs(raw_args):
   parser = argparse.ArgumentParser(description='Port scanner to scan either a specified set of TCP or UDP ports.')
   parser.add_argument('-p', '--port', nargs='+', required=True, help='the ports to search')
