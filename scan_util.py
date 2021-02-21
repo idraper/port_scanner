@@ -25,7 +25,6 @@ def tryTCP(host, port, verbose=False):
   if resp is None: 
     rtn = PortResults(host, port, 'closed', 'None')
   elif resp.haslayer(TCP):
-    # resp.show()
     if resp.getlayer(TCP).flags == 0x12:
       send_rst = sr(IP(dst=host)/TCP(dport=port.port,flags='AR'),timeout=3, verbose=False)
       rtn = PortResults(host, port, 'open', resp.show(dump=True))
