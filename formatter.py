@@ -43,7 +43,6 @@ class Formatter:
 \setlength{\oddsidemargin}{5mm}			% Remove 'twosided' indentation
 \setlength{\evensidemargin}{5mm}
 
-\usepackage[english]{babel}
 \usepackage[protrusion=true,expansion=true]{microtype}	
 \usepackage{amsmath,amsfonts}
 \usepackage{graphicx}

@@ -3,9 +3,21 @@
 This is a tool for scanning hosts for ports to see if they are open.
 It uses multi-threading for much faster results than sequential requests.
 
+NOTE: All scripts have only been tested using Windows 10, and with
+proper installation of requirements.
+
+This includes things such as python, packages like `scapy`, `latex`, etc.
+In order to use this script you will need to have all the python packages installed,
+as well as `Winpcap`/`Npcap` (for scapy).
+
+If you want to generate pdf reports (recommended), you will need to have latex installed on your machine
+with the required packages installed (`geometry`, `microtype`, `amsmath`, `amsfonts`, and `graphicx`).
+
 ---
 
-## Hosts
+## Command-line
+
+### Hosts
 
 There are several ways to provide hosts.
 You must provide hosts either explicitly, as a range, or from a file.
@@ -36,7 +48,7 @@ Running with hosts in a file as well as a different range:
 
 ---
 
-## Ports
+### Ports
 
 You may supply as many ports to check as you want with the `-p` flag.
 Each port is configured independently and will be checked on every host.
@@ -70,7 +82,7 @@ Note that if you use traceroute, you must specify the protocol.
 
 ---
 
-## Output
+### Output
 
 By default, this will print out results to stdout, but
 if you have latex installed with the proper packages installed
@@ -80,3 +92,19 @@ Generating a pdf report of findings:
 ```
 > python3 scan.py -p 80:tcp:t -ho 8.8.8.8 -l report.pdf
 ```
+
+---
+
+## GUI
+
+Instead of using the command-line, you can access the `scan.py` script through a web GUI (albeit very simple :D)
+which acts as a wrapper around the command-line arguments.
+
+You can run this service with the `scan_web.py` script, usage as follows:
+```
+> python3 scan_web
+```
+
+This will open a browser window connected to lightweight server which calls `scan.py` for you.
+All arguments are the same, and you describe ports in the same way.
+This GUI works for now, but in the future it would be nice to update it and make adding ports nicer.
