@@ -37,9 +37,9 @@ class PortResults:
     return json.dumps(self.toJson())
 
 class HostResults:
-  def __init__(self, host, portResults):
+  def __init__(self, host, portResults=None):
     self.host = host
-    self.portResults = portResults
+    self.portResults = [] if portResults is None else portResults
 
   def __repr__(self):
     return self.__str__()
@@ -52,3 +52,22 @@ class HostResults:
 
   def toJsonStr(self):
     return json.dumps(self.toJson())
+
+class AllResults:
+  def __init__(self, hostResults=None):
+    self.hostResults = {} if hostResults is None else hostResults
+  
+  def __getitem__(self, key):
+    return self.hostResults[key]
+
+  def __repr__(self):
+    return self.__str__()
+  
+  def __str__(self):
+    return f'AllResults({len(self.hostResults)})'
+
+  def addPortResult(self, portResult):
+    if portResult.host in self.hostResults:
+      self.hostResults[portResult.host].portResults.append(portResult)
+    else:
+      self.hostResults[portResult.host] = HostResults(portResult.host, [portResult])

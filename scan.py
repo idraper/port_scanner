@@ -1,13 +1,16 @@
-
+import sys
 import progressbar
 import concurrent.futures
+
+from util import AllResults
+from formatter import Formatter
 from scan_util import checkPort
 from entry import getHosts, processArgs, getArgs
 
-from util import HostResults
-
 def main(args=None):
-  hosts, ports, verbose = getArgs(args)
+  hosts, ports, latex, verbose = getArgs(args)
+
+  allResults = AllResults()
 
   with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
     futures = []
@@ -21,9 +24,12 @@ def main(args=None):
     for future in concurrent.futures.as_completed(futures):
       result = future.result()
       if verbose: bar.update(i)
-      # print(result.raw)
+      allResults.addPortResult(result)
       i += 1
+    if verbose: bar.finish()
 
+  if latex is None: Formatter(allResults).print()
+  else:             Formatter(allResults).latex(latex)
 
 if __name__ == '__main__':
   main()

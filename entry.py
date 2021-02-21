@@ -33,12 +33,13 @@ def processArgs(parser, raw_args):
   hosts = getHosts(args)
   if len(hosts) == 0: parser.error('No hosts provided')
 
-  return hosts, [argToPort(arg) for arg in args.port], args.verbose
+  return hosts, [argToPort(arg) for arg in args.port], args.latex, args.verbose
 
 def getArgs(raw_args):
   parser = argparse.ArgumentParser(description='Port scanner to scan either a specified set of TCP or UDP ports.')
   parser.add_argument('-p', '--port', nargs='+', required=True, help='the ports to search')
   parser.add_argument('-v', '--verbose', type=lambda x: bool(strtobool(x)), default=True, help='whether to print to stdout')
+  parser.add_argument('-l', '--latex', default=None, help='generate pdf report at the given filename using latex (must have latex installed)')
 
   group = parser.add_argument_group()
   group.add_argument('-ho', '--host', nargs='+', help='the host to search on')

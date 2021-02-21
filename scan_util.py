@@ -25,7 +25,7 @@ def tryTCP(host, port, verbose=False):
   if resp is None: 
     rtn = PortResults(host, port, 'closed', 'None')
   elif resp.haslayer(TCP):
-    resp.show()
+    # resp.show()
     if resp.getlayer(TCP).flags == 0x12:
       send_rst = sr(IP(dst=host)/TCP(dport=port.port,flags='AR'),timeout=3, verbose=False)
       rtn = PortResults(host, port, 'open', resp.show(dump=True))
@@ -57,9 +57,6 @@ def tryUDP(host, port, verbose=False):
   return rtn
 
 def checkPort(host, port, verbose=False):
-  # print(('-' * 40) + f'{host}:{port.port}({port.proto})' + ('-' * 40))
-  # if verbose: print(f'\rchecking {host}:{port.port} ({port.proto})', end='')
-
   rtn = None
   if port.trace:            rtn = tryTrace(host, port, verbose)
   elif port.proto == 'tcp': rtn = tryTCP(host, port, verbose)
