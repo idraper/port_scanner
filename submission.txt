@@ -1,0 +1,524 @@
+-------------------------------------------------------------------------------------------------------------------
+Author - Isaac Draper (idraper)
+Comments - All this code is on github at idraper/port_scanner.
+-------------------------------------------------------------------------------------------------------------------
+
+-------------------------------------------------------------------------------------------------------------------
+scan.py
+-------------------------------------------------------------------------------------------------------------------
+import progressbar
+import concurrent.futures
+
+from entry import getArgs
+from util import AllResults
+from formatter import Formatter
+from scan_util import checkPort
+
+def main(args=None):
+  hosts, ports, latex, verbose = getArgs(args)
+
+  allResults = AllResults()
+
+  with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
+    # add all port checking to the thread pool
+    futures = []
+    for host in hosts:
+      pResults = []
+      for port in ports:
+        futures.append(executor.submit(checkPort, host, port, verbose))
+
+    # add our result once the thread has finished
+    i = 0
+    if verbose: bar = progressbar.ProgressBar(max_value=len(futures))
+    for future in concurrent.futures.as_completed(futures):
+      result = future.result()
+      if verbose: bar.update(i)
+      allResults.addPortResult(result)
+      i += 1
+    if verbose: bar.finish()
+
+  # output the results
+  if latex is None: Formatter(allResults).print()
+  else:             Formatter(allResults).latex(latex)
+
+if __name__ == '__main__':
+  main()
+
+
+-------------------------------------------------------------------------------------------------------------------
+scan_web.py
+-------------------------------------------------------------------------------------------------------------------
+import http.server
+import socketserver
+from urllib.parse import urlparse
+from urllib.parse import parse_qs
+
+import os
+import sys
+from io import StringIO
+
+import scan
+
+# HTML to return
+titleHTML = '<body><h1>Port Scanner</h1></body>'
+def hostsHTML(h):
+  return f'<body><h3>Hosts</h3><div><textarea name="host" rows="5" cols="30">{h}</textarea></div></body>'
+def hostRangeHTML(h):
+  return f'<body><h3>Host Range</h3><div><br><input type="text" id="hostRange" name="hostRange" value="{h}"><br></div></body>'
+def hostFileHTML(h):
+  return f'<body><h3>Host File</h3><div><br><input type="text" id="hostFile" name="hostFile" value="{h}"><br></div></body>'
+def portsHTML(p):
+  return f'<body><h3>Ports</h3><div><textarea name="port" rows="5" cols="30">{p}</textarea></div></body>'
+def latexHTML(l):
+  return f'<body><h3>Create PDF Report (must have latex installed)</h3><div><br><input type="text" id="latex" name="latex" value="{l}"><br></div></body>'
+
+# JS to trigger value to run
+script = '''<script type="text/javascript">
+function runFunc() {
+  var myForm = document.getElementById('myForm');
+  myForm.run.value = true;
+  myForm.submit();
+}
+</script>
+'''
+
+class MyHttpRequestHandler(http.server.SimpleHTTPRequestHandler):
+  def do_GET(self):
+    self.send_response(200)
+    self.send_header("Content-type", "text/html")
+    self.end_headers()
+
+    # Extract query params
+    hosts = ''
+    hostRange = ''
+    hostFile = ''
+    ports = ''
+    latex = ''
+    run = False
+    query_components = parse_qs(urlparse(self.path).query)
+    if 'host' in query_components:
+      hosts = query_components['host']
+      hosts = '\n'.join(hosts)
+    if 'hostRange' in query_components:
+      hostRange = query_components['hostRange'][0]
+    if 'hostFile' in query_components:
+      hostFile = query_components['hostFile'][0]
+    if 'port' in query_components:
+      ports = query_components['port']
+      ports = '\n'.join(ports)
+    if 'latex' in query_components:
+      latex = query_components['latex'][0]
+    if 'run' in query_components:
+      run = True if query_components['run'][0] == 'true' else False
+
+    if run:
+      # run the script (show different page with output)
+      html = f'<html>{script}{titleHTML}Running...'
+      self.wfile.write(bytes(html, "utf8"))
+
+      args = ['-p', *(ports.split('\n'))]
+      if len(hosts) > 0: args += ['-ho', *(hosts.split('\n'))]
+      if len(hostRange) > 0: args += ['-r', hostRange]
+      if len(hostFile) > 0: args += ['-f', hostFile]
+      if len(latex) > 0: args += ['-l', latex]
+
+      print(args)
+      old_stdout = sys.stdout
+      sys.stdout = mystdout = StringIO()
+
+      output = ''
+      try:
+        scan.main(args)
+      except:
+        output = f'Error with args: {args}'
+
+      sys.stdout = old_stdout
+      output = output if output.startswith('Error') else mystdout.getvalue()
+      if 'Summary' in output: output = output[output.index('Summary'):]
+      elif output.startswith('Error'): pass
+      else: output = 'Generated report'
+
+      self.wfile.write(bytes(f'Done<br></br><div>Output:</div><div><textarea rows="40" cols="60">{output}</textarea></div><br></br><form><input type="submit" value="New Scan"></form></html>', "utf8"))
+    else:
+      # show normal page
+      html = f'<html>{script}<head></head>{titleHTML}<form id="myForm" onsubmit="runFunc()">{hostsHTML(hosts)}{hostRangeHTML(hostRange)}{hostFileHTML(hostFile)}{portsHTML(ports)}{latexHTML(latex)}<input type="submit" value="Submit"><input type="hidden" name="run" value="false"/></form></html>'
+      self.wfile.write(bytes(html, "utf8"))
+
+    return
+
+if __name__ == '__main__':
+  print('Starting server on http://localhost:9922')
+  httpd = http.server.HTTPServer(('localhost', 9922), MyHttpRequestHandler)
+  os.system('start http://localhost:9922')
+  httpd.serve_forever()
+
+
+-------------------------------------------------------------------------------------------------------------------
+entry.py
+-------------------------------------------------------------------------------------------------------------------
+import argparse
+from netaddr import iter_iprange
+from distutils.util import strtobool
+
+from util import Port
+
+# converts port argument input into a Port object
+def argToPort(arg):
+  sp = arg.split(':')
+  if len(sp) == 1: return Port(int(sp[0]))
+  if len(sp) == 2: return Port(int(sp[0]), sp[1])
+  if len(sp) == 3: return Port(int(sp[0]), sp[1], True)
+
+# returns the combination of all hosts from inputs
+def getHosts(args):
+  hosts = set()
+  if args.host is not None:
+    hosts.update(args.host)
+  if args.range is not None:
+    rng = args.range.split('-')
+    if len(rng) == 1: raise TypeError(f'Didn\'t get a range, received: {args.range}')
+    if len(rng) > 2: raise TypeError(f'Cannot have more than 1 range, received: {args.range}')
+    if len(rng) == 2 and rng[1].count('.') == 0: rng[1] = '.'.join(rng[0].split('.')[:-1]) + f'.{rng[1]}'
+    hosts.update(map(lambda x: str(x), iter_iprange(*rng)))
+  if args.file is not None:
+    for fname in args.file:
+      with open(fname, 'r') as f:
+        hosts.update([line.strip() for line in f])
+    if '' in hosts: hosts.remove('')
+
+  return sorted(list(hosts))
+
+# parses the arguments using a given parser
+def processArgs(parser, raw_args):
+  args = parser.parse_args(raw_args)
+  hosts = getHosts(args)
+  if len(hosts) == 0: parser.error('No hosts provided')
+
+  return hosts, [argToPort(arg) for arg in args.port], args.latex, args.verbose
+
+# creates the argument parser and returns the relevant info
+def getArgs(raw_args):
+  parser = argparse.ArgumentParser(description='Port scanner to scan either a specified set of TCP or UDP ports.')
+  parser.add_argument('-p', '--port', nargs='+', required=True, help='the ports to search')
+  parser.add_argument('-v', '--verbose', type=lambda x: bool(strtobool(x)), default=True, help='whether to print to stdout')
+  parser.add_argument('-l', '--latex', default=None, help='generate pdf report at the given filename using latex (must have latex installed)')
+
+  group = parser.add_argument_group()
+  group.add_argument('-ho', '--host', nargs='+', help='the host to search on')
+  group.add_argument('-r', '--range', help='a host range to search on')
+  group.add_argument('-f', '--file', nargs='+', help='a file (or multiple) containing hosts to search (1 host per line)')
+
+  return processArgs(parser, raw_args)
+
+
+-------------------------------------------------------------------------------------------------------------------
+scan_util.py
+-------------------------------------------------------------------------------------------------------------------
+from scapy.all import sr, sr1, traceroute, IP, TCP, UDP, ICMP
+
+from util import PortResults
+
+# runs a scapy trace and returns the result
+def tryTrace(host, port, verbose=False):
+  def getProtoObj():
+    if port.proto == 'udp': return UDP(dport=port.port)
+    if port.proto == 'tcp': return TCP(dport=port.port)
+
+  rtn = None
+  resp,_ = traceroute(host, dport=port.port, timeout=3, l4=getProtoObj(), verbose=False)
+
+  if resp is None: 
+    rtn = PortResults(host, port, 'closed', 'None')
+  else:
+    rtn = PortResults(host, port, 'trace', resp.get_trace())
+
+  return rtn
+
+# runs a scapy TCP send/receive and returns the result
+def tryTCP(host, port, verbose=False):
+  rtn = None
+  resp = sr1(IP(dst=host)/TCP(dport=port.port,flags='S'),timeout=3, verbose=False)
+
+  if resp is None: 
+    rtn = PortResults(host, port, 'closed', 'None')
+  elif resp.haslayer(TCP):
+    if resp.getlayer(TCP).flags == 0x12:
+      send_rst = sr(IP(dst=host)/TCP(dport=port.port,flags='AR'),timeout=3, verbose=False)
+      rtn = PortResults(host, port, 'open', resp.show(dump=True))
+    elif resp.getlayer(TCP).flags == 0x14:
+      rtn = PortResults(host, port, 'closed', resp.show(dump=True))
+  else: 
+    rtn = PortResults(host, port, 'closed', 'None')
+
+  return rtn
+
+# runs a scapy UDP send/receive and returns the result
+def tryUDP(host, port, verbose=False):
+  rtn = None
+  resp = sr1(IP(dst=host)/UDP(dport=port.port),timeout=3, verbose=False)
+
+  if resp is None:
+    rtn = PortResults(host, port, 'open/filtered', 'None')
+  elif resp.haslayer(ICMP):
+    if resp.getlayer(ICMP).code == 0x3:
+      rtn = PortResults(host, port, 'closed', resp.show(dump=True))
+    if resp.getlayer(ICMP).code == 0x1 or \
+      resp.getlayer(ICMP).code == 0x2 or \
+      resp.getlayer(ICMP).code == 0x9 or \
+      resp.getlayer(ICMP).code == 0xa or \
+      resp.getlayer(ICMP).code == 0xd:
+      rtn = PortResults(host, port, 'filtered', resp.show(dump=True))
+  else: 
+    rtn = PortResults(host, port, 'closed', 'None')
+
+  return rtn
+
+# checks a given port to see if it is open (or trace it)
+def checkPort(host, port, verbose=False):
+  rtn = None
+  if port.trace:            rtn = tryTrace(host, port, verbose)
+  elif port.proto == 'tcp': rtn = tryTCP(host, port, verbose)
+  elif port.proto == 'udp': rtn = tryUDP(host, port, verbose)
+  else: raise TypeError(f'Unsupported protocol for {host}:{port.port} - {port.proto}')
+  return rtn
+
+
+-------------------------------------------------------------------------------------------------------------------
+util.py
+-------------------------------------------------------------------------------------------------------------------
+import json
+
+'''
+Contains information about a port to scan.
+'''
+class Port:
+  def __init__(self, port, proto='tcp', trace=False):
+    self.port = port
+    self.proto = proto
+    self.trace = trace
+
+  def __repr__(self):
+    return self.__str__()
+  
+  def __str__(self):
+    return f'Port({self.port}, {self.proto}, {self.trace})'
+
+  def toJson(self):
+    return json.dumps({'port': self.port, 'proto': self.proto, 'trace': self.trace})
+
+'''
+Contains information about the results of a single port.
+'''
+class PortResults:
+  def __init__(self, host, port, status, raw):
+    self.host = host
+    self.port = port
+    self.status = status
+    self.raw = raw
+
+  def __repr__(self):
+    return self.__str__()
+  
+  def __str__(self):
+    return f'PortResults({self.port}, {self.status})'
+
+  def toJson(self):
+    return {'port': self.port.toJson(), 'status': self.status, 'raw': self.raw}
+
+  def toJsonStr(self):
+    return json.dumps(self.toJson())
+
+'''
+Contains information about the results of a single host.
+'''
+class HostResults:
+  def __init__(self, host, portResults=None):
+    self.host = host
+    self.portResults = [] if portResults is None else portResults
+
+  def __repr__(self):
+    return self.__str__()
+  
+  def __str__(self):
+    return f'HostResults({self.host}, {self.portResults})'
+
+  def toJson(self):
+    return {'host': self.host, 'portResults': list(map(lambda r: r.toJson(), self.portResults))}
+
+  def toJsonStr(self):
+    return json.dumps(self.toJson())
+
+'''
+Contains all results.
+'''
+class AllResults:
+  def __init__(self, hostResults=None):
+    self.hostResults = {} if hostResults is None else hostResults
+  
+  def __getitem__(self, key):
+    return self.hostResults[key]
+
+  def __repr__(self):
+    return self.__str__()
+  
+  def __str__(self):
+    return f'AllResults({len(self.hostResults)})'
+
+  def addPortResult(self, portResult):
+    if portResult.host in self.hostResults:
+      self.hostResults[portResult.host].portResults.append(portResult)
+    else:
+      self.hostResults[portResult.host] = HostResults(portResult.host, [portResult])
+
+
+-------------------------------------------------------------------------------------------------------------------
+formatter.py
+-------------------------------------------------------------------------------------------------------------------
+import os
+from latex import build_pdf
+
+'''
+Takes results objects and outputs them in a nice format.
+'''
+class Formatter:
+  def __init__(self, results):
+    self.results = results
+
+  def __repr__(self):
+    return self.__str__()
+  
+  def __str__(self):
+    return 'ResultsFormatter'
+
+  # print to stdout
+  def print(self):
+    print('Summary:')
+    print(f'UDP Ports Scanned:   {sum(map(lambda hr: sum(map(lambda x: x.port.proto == "udp", hr.portResults)), self.results.hostResults.values()))}')
+    print(f'TCP Ports Scanned:   {sum(map(lambda hr: sum(map(lambda x: x.port.proto == "tcp", hr.portResults)), self.results.hostResults.values()))}')
+    print(f'Total Ports Scanned: {sum(map(lambda hr: len(hr.portResults), self.results.hostResults.values()))}')
+    print(f'Open Ports:          {sum(map(lambda hr: sum(map(lambda x: "open" in x.status, hr.portResults)), self.results.hostResults.values()))}')
+
+    print('')
+    print('Details:')
+    for hostR in sorted(self.results.hostResults.values(), key=lambda hr: hr.host):
+      print(hostR.host)
+      for portR in sorted(hostR.portResults, key=lambda r: r.port.port):
+        print(f'  {portR.port.port}\\{portR.port.proto}'.ljust(20) + portR.status)
+        if portR.status == 'trace':
+          if type(portR.raw) == dict and portR.host in portR.raw:
+            for k in sorted(portR.raw[portR.host].keys()):
+              print(f'    {k}'.ljust(6) + f'{portR.raw[portR.host][k][0]}')
+
+  # print to latex document
+  def latex(self, fname):
+    def header():
+      return r'''
+\documentclass[paper=a4, fontsize=11pt,twoside]{scrartcl}	% KOMA
+
+\usepackage[a4paper,pdftex]{geometry}	% A4paper margins
+\setlength{\oddsidemargin}{5mm}			% Remove 'twosided' indentation
+\setlength{\evensidemargin}{5mm}
+
+\usepackage[protrusion=true,expansion=true]{microtype}	
+\usepackage{amsmath,amsfonts}
+\usepackage{graphicx}
+
+\RedeclareSectionCommand[beforeskip=-5.5ex plus -1ex minus -.2ex,afterskip=4.3ex plus -.2ex]{section}
+\RedeclareSectionCommand[beforeskip=-5.5ex plus -1ex minus -.2ex,afterskip=4.3ex plus -.2ex]{subsection}
+
+\newcommand{\HRule}[1]{\rule{\linewidth}{#1}} 	% Horizontal rule
+
+\makeatletter							% Title
+\def\printtitle{%						
+    {\centering \@title\par}}
+\makeatother									
+
+\makeatletter							% Author
+\def\printauthor{%					
+    {\centering \large \@author}}				
+\makeatother							
+
+      '''
+
+    def cover(title):
+      return r'''
+\title{	\normalsize \textsc{} 	% Subtitle
+		 	\\[2.0cm]								% 2cm spacing
+			\HRule{0.5pt} \\						% Upper rule
+			\LARGE \textbf{\uppercase{'''+title+r'''}}	% Title
+			\HRule{2pt} \\ [0.5cm]		% Lower rule + 0.5cm spacing
+			\normalsize \today			% Todays date
+		}
+
+\author{
+  This report was\\
+  generated from the git repo:\\
+  idraper/port\_scanner\\
+}
+
+\begin{document}
+% ------------------------------------------------------------------------------
+% Maketitle
+% ------------------------------------------------------------------------------
+\thispagestyle{empty}		% Remove page numbering on this page
+
+\printtitle					% Print the title data as defined above
+  	\vfill
+\printauthor				% Print the author data as defined above
+\newpage
+% ------------------------------------------------------------------------------
+% Begin document
+% ------------------------------------------------------------------------------
+\setcounter{page}{1}		% Set page numbering to begin on this page
+      '''
+
+
+    def done():
+      return r'''
+\end{document}
+      '''
+
+    document = ''
+    document += header()
+    document += cover('Port Scan Report')
+
+    # print summary report
+    document += '\n\\section*{Summary}\n\n'
+
+    document += '{\n\LARGE\n'
+    document += r'\begin{tabular}{ll}' + '\n'
+    document += f'UDP Ports Scanned: & {sum(map(lambda hr: sum(map(lambda x: x.port.proto == "udp", hr.portResults)), self.results.hostResults.values()))} \\\\\n'
+    document += f'TCP Ports Scanned: & {sum(map(lambda hr: sum(map(lambda x: x.port.proto == "tcp", hr.portResults)), self.results.hostResults.values()))} \\\\\n'
+    document += f'Total Ports Scanned: & {sum(map(lambda hr: len(hr.portResults), self.results.hostResults.values()))} \\\\\n'
+    document += f'Open Ports: & {sum(map(lambda hr: sum(map(lambda x: "open" in x.status, hr.portResults)), self.results.hostResults.values()))} \n'
+    document += r'\end{tabular} \vfill' + '\n'
+    document += '}\n\n'
+
+    # print table with details report
+    document += '\\section*{Details}\n\n'
+    for hostR in sorted(self.results.hostResults.values(), key=lambda hr: hr.host):
+      document += f'\\subsection*{{{hostR.host}}}\n\n'
+      document += r'\begin{tabular}{lll}'
+      document += '\\hline\n'
+      document += r'Port & Protocol & Status \\'
+      document += '\\hline\n'
+
+      for portR in sorted(hostR.portResults, key=lambda r: r.port.port):
+        document += f'{portR.port.port} & {portR.port.proto} & {portR.status} \\\\'
+
+        if portR.status == 'trace':
+          if type(portR.raw) == dict and portR.host in portR.raw:
+            document += '\n' + r'& & \begin{tabular}{ll}'
+            for k in sorted(portR.raw[portR.host].keys()):
+              document += f'\n{k} & {portR.raw[portR.host][k][0]} \\\\'
+            document += r'\end{tabular} \\' + '\n'
+
+      document += '\\hline\n'
+      document += r'\end{tabular} \vfill' + '\n\n'
+
+    document += done()
+
+    # create and open the pdf
+    with open(fname, 'wb') as file:
+      file.write(bytes(build_pdf(document)))
+    os.system(f'start {fname}')

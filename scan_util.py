@@ -1,4 +1,3 @@
-
 from scapy.all import sr, sr1, traceroute, IP, TCP, UDP, ICMP
 
 from util import PortResults
